@@ -1,0 +1,7 @@
+# ES设置环境变量（直接配置ES和Memgraph连接信息）
+ENV ES_HOST=es-cn-v641fgtry001dnl1g.public.elasticsearch.aliyuncs.com
+ENV ES_PORT=9200
+ENV ES_INDEX=aw_prod1
+ENV ES_USER=elastic
+ENV ES_PASSWORD=1qaz2wsx#EDC
+ENV ES_USE_SSL=false
