@@ -27,8 +27,6 @@ def read_all_from_es(index=None, article_type=None, ntps_id=None, size=10000):
     url = f"{scheme}://{es_host}:{es_port}/{index}/_search"
 
     auth = HTTPBasicAuth(es_user, es_password)
-    params = {"size": size}
-
     must = []
     if article_type:
         must.append({"match": {"articleType": article_type}})
@@ -38,10 +36,14 @@ def read_all_from_es(index=None, article_type=None, ntps_id=None, size=10000):
         else:
             must.append({"term": {"ntpsId": ntps_id}})
 
+    params = {"size": size}
+    payload = {}
+    
+    #查询结果中不会包含'attachments'字段
     if must:
-        payload = {"query": {"bool": {"must": must}}}
+        payload = {"query": {"bool": {"must": must}}, "_source": {"excludes": ["attachments"]}}
     else:
-        payload = {"query": {"match_all": {}}}
+        payload = {"query": {"match_all": {}}, "_source": {"excludes": ["attachments"]}}
 
     #打印查询条件
     curl_cmd = f"""curl -X POST "{url}" -u "{es_user}:{es_password}" -H "Content-Type: application/json" -d '{json.dumps(payload)}'"""
