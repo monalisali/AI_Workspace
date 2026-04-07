@@ -1,0 +1,16 @@
+{
+  "ntpsId":[
+     {"name": "article1","relatedArticleId":[46416,13254,8003,9764]}
+     ,{"name": "article2","relatedArticleId":[15188,37258,37725,28785]}
+     ,{"name": "article3","relatedArticleId":[50164,46668,48718,25947]}
+     ,{"name": "article4","relatedArticleId":[28785,20125,25190,23642,17788,37262,45175,26344,13875,5381,17015,8730,49007]}
+     ,{"name": "article5","relatedArticleId":[37001,42606]}
+     ,{"name": "article6","relatedArticleId":[16214,24395,21985,22026]}
+     ,{"name": "article7","relatedArticleId":[5301,40466,45682,52434,51610 ]}
+     ,{"name": "article8","relatedArticleId":[14606,43129,44318,18983,51775]}
+     ,{"name": "article9","relatedArticleId":[47710,2297,48844]}
+     ,{"name": "article10","relatedArticleId":[43919,52041,52117]}
+
+  ]
+
+}
