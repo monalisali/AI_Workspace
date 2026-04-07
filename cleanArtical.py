@@ -2,6 +2,7 @@ import os
 import logging
 import requests
 import json
+import re
 from requests.auth import HTTPBasicAuth
 
 logging.basicConfig(
@@ -63,6 +64,28 @@ def read_all_from_es(index=None, article_type=None, ntps_id=None, size=10000):
     return documents
 
 
+def extract_dispform_ids(documents):
+    results = {}
+    for doc in documents:
+        ntps_id = doc.get("ntpsId")
+        fulltext = doc.get("fullText", "")
+        if ntps_id and fulltext:
+            matches = re.findall(r'DispForm\.aspx\?ID=(\d+)', fulltext)
+            results[ntps_id] = matches
+    return results
+
+
+def extract_doc_numbers(documents):
+    results = {}
+    for doc in documents:
+        ntps_id = doc.get("ntpsId")
+        fulltext = doc.get("fullText", "")
+        if ntps_id and fulltext:
+            matches = re.findall(r'\[(\d{4})\]\s*(\d+)号', fulltext)
+            results[ntps_id] = [f"[{year}] {num}号" for year, num in matches]
+    return results
+
+
 if __name__ == "__main__":
     #从data.json中读取10个问题的文章ntpsid
     with open("data.json", "r", encoding="utf-8") as f:
@@ -73,10 +96,41 @@ if __name__ == "__main__":
         all_related_ids.extend(item.get("relatedArticleId", []))
     
     all_related_ids = [str(id) for id in all_related_ids]
-    #print(all_related_ids)
-
-    
     docs = read_all_from_es(article_type="regulatoin", ntps_id=all_related_ids)
+    logger.info("---------------------------------打印文章开始-------------------------")
     logger.info(f"Total documents: {len(docs)}")
     for doc in docs:
         logger.info(doc)
+    logger.info("---------------------------------打印文章结束-------------------------")
+
+    logger.info("---------------------------------打印关联文章开始-------------------------")
+    logger.info("用'DispForm.aspx?ID='进行解析")
+    extracted = extract_dispform_ids(docs)
+    logger.info(extracted)
+
+    logger.info("用'[YYYY]X号'进行解析")
+    extracted_numbers = extract_doc_numbers(docs)
+    logger.info(extracted_numbers)
+
+    logger.info("---------------------------------打印关联文章结束-------------------------")
+
+
+
+
+
+
+    '''
+    with open("data.json", "r", encoding="utf-8") as f:
+        data = json.load(f)
+    
+    for item in data.get("ntpsId", []):
+        name = item.get("name")
+        related_ids = [str(id) for id in item.get("relatedArticleId", [])]
+        
+        docs = read_all_from_es(article_type="regulatoin", ntps_id=related_ids)
+        extracted = extract_dispform_ids(docs)
+        
+        logger.info(f"=== {name} ===")
+        for ntps_id, disp_ids in extracted.items():
+            logger.info(f"ntpsId: {ntps_id}, DispForm IDs: {disp_ids}")
+    '''
