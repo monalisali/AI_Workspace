@@ -103,6 +103,93 @@ def extract_book_quotes(documents):
             results[ntps_id] = cleaned
     return results
 
+'''
+def parse_doc_numbers(extracted):
+    for ntps_id, doc_list in extracted.items():
+        for doc in doc_list:
+            match = re.match(r'\[(\d{4})\]\s*(\d+)号', doc)
+            if match:
+                year = int(match.group(1))
+                doc_no = match.group(2)
+                yield ntps_id, year, doc_no
+'''
+
+def parse_doc_num(extracted):
+    result = {}
+    for ntps_id, doc_list in extracted.items():
+        if ntps_id not in result:
+             result[ntps_id] = []
+        for doc in doc_list:
+            match = re.match(r'\[(\d{4})\]\s*(\d+)号', doc)
+            if match:
+                year = int(match.group(1))
+                doc_no = match.group(2)
+                result[ntps_id].append({"year": year, "docNumber":doc_no})
+    return result
+
+def query_by_year_and_docno(year, doc_no, index=None):
+    index = index or os.getenv("ES_INDEX", "aw_prod1")
+    es_host = os.getenv("ES_HOST", "es-cn-v641fgtry001dnl1g.public.elasticsearch.aliyuncs.com")
+    es_port = os.getenv("ES_PORT", "9200")
+    es_user = os.getenv("ES_USER", "elastic")
+    es_password = os.getenv("ES_PASSWORD", "1qaz2wsx#EDC")
+    es_use_ssl = os.getenv("ES_USE_SSL", "false").lower() == "true"
+
+    scheme = "https" if es_use_ssl else "http"
+    url = f"{scheme}://{es_host}:{es_port}/{index}/_search"
+
+    auth = HTTPBasicAuth(es_user, es_password)
+    payload = {
+        "query": {
+            "bool": {
+                "must": [
+                    {"term": {"yearPublish": year}},
+                    {"term": {"docNo": doc_no}}
+                ]
+            }
+        },
+        "_source": ["ntpsId"]
+    }
+
+    response = requests.post(url, auth=auth, json=payload, verify=False)
+    response.raise_for_status()
+
+    hits = response.json()["hits"]["hits"]
+    return [hit["_source"]["ntpsId"] for hit in hits]
+
+def get_ntpsid_by_docNum(doc_list):
+    temp = {}
+    result = {}
+    for ntps_id, items in doc_list.items():
+        if ntps_id not in result:
+            temp[ntps_id] = []
+            for i in items:
+                r = query_by_year_and_docno(i["year"],i["docNumber"])
+                temp[ntps_id].append(r)
+
+    # doc_list中一个ntpsid会有多个文号，如：{'28785': ['[2014] 109号', '[2009] 59号'] }
+    # temp中会变成{'28785': [['12768', '19253', '38070'], ['27236', '2946']]}, 一个ntpsid会有多个数组。
+    # 要把数组合并起来，变成{'28785': ['12768', '19253', '38070','27236', '2946']},
+    for id,item in temp.items():
+        result[id] = []
+        for i in item:
+            result[id].extend(i)     
+        result[id] = list(set(result[id]))
+
+    return result
+            
+def append_ntpsIds(source, target):
+    for id,item in target.items():
+        for i in item:
+            if i not in source[id]:
+                source[id] = []
+                source[id].append(i)
+    return source
+
+        
+
+    
+
 
 if __name__ == "__main__":
     #从data.json中读取10个问题的文章ntpsid
@@ -117,14 +204,14 @@ if __name__ == "__main__":
     docs = read_all_from_es(article_type="regulatoin", ntps_id=all_related_ids)
     logger.info("---------------------------------打印文章开始-------------------------")
     logger.info(f"Total documents: {len(docs)}")
-    for doc in docs:
-        logger.info(doc)
-    logger.info("---------------------------------打印文章结束-------------------------")
+    #for doc in docs:
+        #logger.info(doc)
+    #logger.info("---------------------------------打印文章结束-------------------------")
 
     logger.info("---------------------------------打印关联文章开始-------------------------")
     logger.info("用'DispForm.aspx?ID='进行解析")
-    extracted = extract_dispform_ids(docs)
-    logger.info(extracted)
+    extracted_ntpsIds = extract_dispform_ids(docs)
+    logger.info(extracted_ntpsIds)
 
     logger.info("用'[YYYY]X号'进行解析")
     extracted_numbers = extract_doc_numbers(docs)
@@ -134,3 +221,17 @@ if __name__ == "__main__":
     extracted_quotes = extract_book_quotes(docs)
     logger.info(extracted_quotes)
     logger.info("---------------------------------打印关联文章结束-------------------------")
+    logger.info("通过year和doc_no获取ntpsId")
+    all_parsed_docNumbers = parse_doc_num(extracted_numbers)
+    all_docNo_ntpsIds = get_ntpsid_by_docNum(all_parsed_docNumbers)
+    ss = append_ntpsIds(extracted_ntpsIds,all_docNo_ntpsIds)
+    aa = "ss"
+
+    '''
+    all_results = {}
+    for ntps_id, year, doc_no in parse_doc_numbers(extracted_numbers):
+        result = query_by_year_and_docno(year, doc_no)
+        key = f"[{year}] {doc_no}号"
+        all_results[key] = result
+        logger.info(f"{key}: {result}")
+    '''
