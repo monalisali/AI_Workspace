@@ -86,6 +86,24 @@ def extract_doc_numbers(documents):
     return results
 
 
+def extract_book_quotes(documents):
+    results = {}
+    for doc in documents:
+        ntps_id = doc.get("ntpsId")
+        fulltext = doc.get("fullText", "")
+        if ntps_id and fulltext:
+            matches = re.findall(r'《([^》]+)》', fulltext)
+            cleaned = []
+            for m in matches:
+                m = m.strip()
+                if not m or re.match(r'^https?://', m) or re.match(r'^[\w-]+\.(css|js|html|png|jpg|jpeg|gif|svg|ico)$', m, re.IGNORECASE):
+                    continue
+                if len(m) < 200:
+                    cleaned.append(m)
+            results[ntps_id] = cleaned
+    return results
+
+
 if __name__ == "__main__":
     #从data.json中读取10个问题的文章ntpsid
     with open("data.json", "r", encoding="utf-8") as f:
@@ -112,25 +130,7 @@ if __name__ == "__main__":
     extracted_numbers = extract_doc_numbers(docs)
     logger.info(extracted_numbers)
 
+    logger.info("《》'进行解析")
+    extracted_quotes = extract_book_quotes(docs)
+    logger.info(extracted_quotes)
     logger.info("---------------------------------打印关联文章结束-------------------------")
-
-
-
-
-
-
-    '''
-    with open("data.json", "r", encoding="utf-8") as f:
-        data = json.load(f)
-    
-    for item in data.get("ntpsId", []):
-        name = item.get("name")
-        related_ids = [str(id) for id in item.get("relatedArticleId", [])]
-        
-        docs = read_all_from_es(article_type="regulatoin", ntps_id=related_ids)
-        extracted = extract_dispform_ids(docs)
-        
-        logger.info(f"=== {name} ===")
-        for ntps_id, disp_ids in extracted.items():
-            logger.info(f"ntpsId: {ntps_id}, DispForm IDs: {disp_ids}")
-    '''
