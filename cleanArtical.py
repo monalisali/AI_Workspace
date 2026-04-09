@@ -103,16 +103,6 @@ def extract_book_quotes(documents):
             results[ntps_id] = cleaned
     return results
 
-'''
-def parse_doc_numbers(extracted):
-    for ntps_id, doc_list in extracted.items():
-        for doc in doc_list:
-            match = re.match(r'\[(\d{4})\]\s*(\d+)号', doc)
-            if match:
-                year = int(match.group(1))
-                doc_no = match.group(2)
-                yield ntps_id, year, doc_no
-'''
 
 def parse_doc_num(extracted):
     result = {}
@@ -182,13 +172,32 @@ def append_ntpsIds(source, target):
     for id,item in target.items():
         for i in item:
             if i not in source[id]:
-                source[id] = []
+                if source.get(id) is None:
+                    source[id] = []
                 source[id].append(i)
     return source
 
-        
-
+#获取fullText中<a href="/_layouts/Redirect.aspx 开头的href
+def extract_redirect_links(documents):
+    results = {}
+    total_count = 0
+    for doc in documents:
+        ntps_id = doc.get("ntpsId")
+        fulltext = doc.get("fullText", "")
+        if ntps_id and fulltext:
+            pattern = r'<a\s+[^>]*href=["\'](/_layouts/Redirect\.aspx[^"\']*)["\'][^>]*>'
+            matches = re.findall(pattern, fulltext, re.IGNORECASE)
+            results[ntps_id] = [{"href": href} for href in matches]
+            total_count += len(matches)
+    logger.info(f"共找到 {total_count} 个 Redirect.aspx 链接")
     
+    with open("docs/redirectLink.txt", "w", encoding="utf-8") as f:
+        for ntps_id, links in results.items():
+            for link in links:
+                f.write(f"{ntps_id}\t{link['href']}\n")
+    
+    return results
+
 
 
 if __name__ == "__main__":
@@ -204,10 +213,12 @@ if __name__ == "__main__":
     docs = read_all_from_es(article_type="regulatoin", ntps_id=all_related_ids)
     logger.info("---------------------------------打印文章开始-------------------------")
     logger.info(f"Total documents: {len(docs)}")
-    #for doc in docs:
-        #logger.info(doc)
-    #logger.info("---------------------------------打印文章结束-------------------------")
-
+    '''
+    for doc in docs:
+        logger.info(doc)
+    logger.info("---------------------------------打印文章结束-------------------------")
+    '''
+    
     logger.info("---------------------------------打印关联文章开始-------------------------")
     logger.info("用'DispForm.aspx?ID='进行解析")
     extracted_ntpsIds = extract_dispform_ids(docs)
@@ -224,14 +235,9 @@ if __name__ == "__main__":
     logger.info("通过year和doc_no获取ntpsId")
     all_parsed_docNumbers = parse_doc_num(extracted_numbers)
     all_docNo_ntpsIds = get_ntpsid_by_docNum(all_parsed_docNumbers)
-    ss = append_ntpsIds(extracted_ntpsIds,all_docNo_ntpsIds)
-    aa = "ss"
+    #合并key相同的数据
+    append_ntpsIds(extracted_ntpsIds,all_docNo_ntpsIds)
+    ss = extract_redirect_links(docs)
+    aa = 'a'
 
-    '''
-    all_results = {}
-    for ntps_id, year, doc_no in parse_doc_numbers(extracted_numbers):
-        result = query_by_year_and_docno(year, doc_no)
-        key = f"[{year}] {doc_no}号"
-        all_results[key] = result
-        logger.info(f"{key}: {result}")
-    '''
+
