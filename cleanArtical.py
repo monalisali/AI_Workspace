@@ -4,6 +4,7 @@ import requests
 import json
 import re
 from requests.auth import HTTPBasicAuth
+from neo4j import GraphDatabase
 
 logging.basicConfig(
     level=logging.INFO,
@@ -17,12 +18,13 @@ logger = logging.getLogger(__name__)
 
 
 def read_all_from_es(index=None, article_type=None, ntps_id=None, size=10000):
-    index = index or os.getenv("ES_INDEX", "aw_prod1")
-    es_host = os.getenv("ES_HOST", "es-cn-v641fgtry001dnl1g.public.elasticsearch.aliyuncs.com")
-    es_port = os.getenv("ES_PORT", "9200")
-    es_user = os.getenv("ES_USER", "elastic")
-    es_password = os.getenv("ES_PASSWORD", "1qaz2wsx#EDC")
-    es_use_ssl = os.getenv("ES_USE_SSL", "false").lower() == "true"
+    env = _read_dockerfile_env()
+    index = index or env.get("ES_INDEX", os.getenv("ES_INDEX"))
+    es_host = env.get("ES_HOST", os.getenv("ES_HOST"))
+    es_port = env.get("ES_PORT", os.getenv("ES_PORT"))
+    es_user = env.get("ES_USER", os.getenv("ES_USER"))
+    es_password = env.get("ES_PASSWORD", os.getenv("ES_PASSWORD"))
+    es_use_ssl = env.get("ES_USE_SSL", os.getenv("ES_USE_SSL", "false")).lower() == "true"
 
     scheme = "https" if es_use_ssl else "http"
     url = f"{scheme}://{es_host}:{es_port}/{index}/_search"
@@ -103,16 +105,6 @@ def extract_book_quotes(documents):
             results[ntps_id] = cleaned
     return results
 
-'''
-def parse_doc_numbers(extracted):
-    for ntps_id, doc_list in extracted.items():
-        for doc in doc_list:
-            match = re.match(r'\[(\d{4})\]\s*(\d+)号', doc)
-            if match:
-                year = int(match.group(1))
-                doc_no = match.group(2)
-                yield ntps_id, year, doc_no
-'''
 
 def parse_doc_num(extracted):
     result = {}
@@ -128,12 +120,13 @@ def parse_doc_num(extracted):
     return result
 
 def query_by_year_and_docno(year, doc_no, index=None):
-    index = index or os.getenv("ES_INDEX", "aw_prod1")
-    es_host = os.getenv("ES_HOST", "es-cn-v641fgtry001dnl1g.public.elasticsearch.aliyuncs.com")
-    es_port = os.getenv("ES_PORT", "9200")
-    es_user = os.getenv("ES_USER", "elastic")
-    es_password = os.getenv("ES_PASSWORD", "1qaz2wsx#EDC")
-    es_use_ssl = os.getenv("ES_USE_SSL", "false").lower() == "true"
+    env = _read_dockerfile_env()
+    index = index or env.get("ES_INDEX", os.getenv("ES_INDEX"))
+    es_host = env.get("ES_HOST", os.getenv("ES_HOST"))
+    es_port = env.get("ES_PORT", os.getenv("ES_PORT"))
+    es_user = env.get("ES_USER", os.getenv("ES_USER"))
+    es_password = env.get("ES_PASSWORD", os.getenv("ES_PASSWORD"))
+    es_use_ssl = env.get("ES_USE_SSL", os.getenv("ES_USE_SSL", "false")).lower() == "true"
 
     scheme = "https" if es_use_ssl else "http"
     url = f"{scheme}://{es_host}:{es_port}/{index}/_search"
@@ -173,7 +166,9 @@ def get_ntpsid_by_docNum(doc_list):
     for id,item in temp.items():
         result[id] = []
         for i in item:
-            result[id].extend(i)     
+            for val in i:
+                if val != id:
+                    result[id].append(val)
         result[id] = list(set(result[id]))
 
     return result
@@ -182,14 +177,249 @@ def append_ntpsIds(source, target):
     for id,item in target.items():
         for i in item:
             if i not in source[id]:
-                source[id] = []
+                if source.get(id) is None:
+                    source[id] = []
                 source[id].append(i)
     return source
 
-        
 
+#获取fullText中<a href="/_layouts/Redirect.aspx 开头的href
+def extract_redirect_links(documents):
+    results = {}
+    total_count = 0
+    for doc in documents:
+        ntps_id = doc.get("ntpsId")
+        fulltext = doc.get("fullText", "")
+        if ntps_id and fulltext:
+            pattern = r'<a\s+[^>]*href=["\'](/_layouts/Redirect\.aspx[^"\']*)["\'][^>]*>'
+            matches = re.findall(pattern, fulltext, re.IGNORECASE)
+            results[ntps_id] = [{"href": href} for href in matches]
+            total_count += len(matches)
+    logger.info(f"共找到 {total_count} 个 Redirect.aspx 链接")
     
+    with open("docs/redirectLink.txt", "w", encoding="utf-8") as f:
+        for ntps_id, links in results.items():
+            for link in links:
+                f.write(f"{ntps_id}\t{link['href']}\n")
+    
+    return results
 
+
+
+#读取DockerFile配置
+def _read_dockerfile_env():
+    dockerfile_path = os.path.join(os.path.dirname(__file__), "DockerFile")
+    env = {}
+    if os.path.exists(dockerfile_path):
+        with open(dockerfile_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("ENV MG_HOST="):
+                    env["MG_HOST"] = line.split("=", 1)[1]
+                elif line.startswith("ENV MG_PORT="):
+                    env["MG_PORT"] = line.split("=", 1)[1]
+                elif line.startswith("ENV ES_HOST="):
+                    env["ES_HOST"] = line.split("=", 1)[1]
+                elif line.startswith("ENV ES_PORT="):
+                    env["ES_PORT"] = line.split("=", 1)[1]
+                elif line.startswith("ENV ES_INDEX="):
+                    env["ES_INDEX"] = line.split("=", 1)[1]
+                elif line.startswith("ENV ES_USER="):
+                    env["ES_USER"] = line.split("=", 1)[1]
+                elif line.startswith("ENV ES_PASSWORD="):
+                    env["ES_PASSWORD"] = line.split("=", 1)[1]
+                elif line.startswith("ENV ES_USE_SSL="):
+                    env["ES_USE_SSL"] = line.split("=", 1)[1]
+    return env
+
+
+#如果文章ntpsid和关联文章的ntpsid都存在于图数据库，则返回
+
+def filter_existing_in_graphdb(data):
+    env = _read_dockerfile_env()
+    mg_host = env.get("MG_HOST", os.getenv("MG_HOST"))
+    mg_port = env.get("MG_PORT", os.getenv("MG_PORT"))
+    uri = f"bolt://{mg_host}:{mg_port}"
+    driver = GraphDatabase.driver(uri)
+    
+    result = {}
+    with driver.session() as session:
+        for ntps_id, related_ids in data.items():
+            ntps_id_str = str(ntps_id)
+            check_query = "MATCH (n) WHERE n.ntpsId = $ntps_id RETURN n.ntpsId"
+            check_result = list(session.run(check_query, ntps_id=ntps_id_str))
+            if not check_result:
+                logger.info(f"ntps_id {ntps_id} 不存在于图数据库中，跳过")
+                continue
+            
+            related_ids = [str(id) for id in related_ids]
+            if related_ids:
+                placeholders = ", ".join([f"$id{i}" for i in range(len(related_ids))])
+                query = f"MATCH (n) WHERE n.ntpsId IN [{placeholders}] RETURN n.ntpsId"
+                params = {f"id{i}": rid for i, rid in enumerate(related_ids)}
+                records = list(session.run(query, **params))
+                existing_ids = [record["n.ntpsId"] for record in records]
+                result[ntps_id] = existing_ids
+    
+    driver.close()
+    return {k: v for k, v in result.items() if v}
+
+#通过ntpsid获取关系
+#filter_ids_in_graph_relations(existedIds_in_graph,get_graph_relation)
+def filter_ids_in_graph_relations(existedIds_in_graph, get_graph_relation):
+    result = {}
+    all_relation_ids = set()
+    for rel in get_graph_relation:
+        start_data = rel.get("start", {})
+        end_data = rel.get("end", {})
+        if "ntpsId" in start_data:
+            all_relation_ids.add(str(start_data["ntpsId"]))
+        if "ntpsId" in end_data:
+            all_relation_ids.add(str(end_data["ntpsId"]))
+    
+    for ntps_id, related_ids in existedIds_in_graph.items():
+        existing = [rid for rid in related_ids if rid in all_relation_ids]
+        if existing:
+            result[ntps_id] = existing
+    
+    return result
+
+#查询图数据库node
+def query_from_graphdb(limit=10):
+    env = _read_dockerfile_env()
+    mg_host = env.get("MG_HOST", os.getenv("MG_HOST"))
+    mg_port = env.get("MG_PORT", os.getenv("MG_PORT"))
+    
+    uri = f"bolt://{mg_host}:{mg_port}"
+    driver = GraphDatabase.driver(uri)
+    
+    query = "MATCH (n) RETURN n LIMIT $limit"
+    
+    with driver.session() as session:
+        result = session.run(query, limit=limit)
+        records = list(result)
+    
+    driver.close()
+    
+    return [dict(record["n"]) for record in records]
+
+# 查询图数据库有node数量
+def count_graphdb_records():
+    env = _read_dockerfile_env()
+    mg_host = env.get("MG_HOST", os.getenv("MG_HOST"))
+    mg_port = env.get("MG_PORT", os.getenv("MG_PORT"))
+    
+    uri = f"bolt://{mg_host}:{mg_port}"
+    driver = GraphDatabase.driver(uri)
+    
+    query = "MATCH (n) RETURN count(n) AS total"
+    
+    with driver.session() as session:
+        result = session.run(query)
+        total = result.single()["total"]
+    
+    driver.close()
+    
+    return total
+
+#查询图数据库的关系（边）
+def query_all_graphdb_relationships(limit=10):
+    env = _read_dockerfile_env()
+    mg_host = env.get("MG_HOST", os.getenv("MG_HOST"))
+    mg_port = env.get("MG_PORT", os.getenv("MG_PORT"))
+    
+    uri = f"bolt://{mg_host}:{mg_port}"
+    driver = GraphDatabase.driver(uri)
+    
+    query = "MATCH (a)-[r]->(b) RETURN a, type(r), b LIMIT $limit"
+    
+    with driver.session() as session:
+        result = session.run(query, limit=limit)
+        records = list(result)
+    
+    driver.close()
+    
+    return [
+        {
+            "start": dict(record["a"]),
+            "relationship": record["type(r)"],
+            "end": dict(record["b"])
+        }
+        for record in records
+    ]
+
+def create_property_relations(existedIds_in_graph, property_ids=None):
+    if property_ids is not None:
+        properties = property_ids if isinstance(property_ids, list) else [property_ids]
+    else:
+        properties = list(existedIds_in_graph.keys())
+    
+    env = _read_dockerfile_env()
+    mg_host = env.get("MG_HOST", os.getenv("MG_HOST"))
+    mg_port = env.get("MG_PORT", os.getenv("MG_PORT"))
+    uri = f"bolt://{mg_host}:{mg_port}"
+    driver = GraphDatabase.driver(uri)
+    
+    total_created = 0
+    with driver.session() as session:
+        for prop_id in properties:
+            if prop_id not in existedIds_in_graph:
+                logger.info(f"属性 {prop_id} 不存在, existedIds_in_graph keys: {list(existedIds_in_graph.keys())}")
+                continue
+            
+            values = existedIds_in_graph[prop_id]
+            logger.info(f"属性 {prop_id} 的值: {values}, 数量: {len(values)}")
+            
+            if not values:
+                logger.info(f"属性 {prop_id} 没有值，无需创建关系")
+                continue
+            
+            relation_type = "RELATED_TO"
+            created_count = 0
+            for val in values:
+                #先检查关系是否已经存在
+                check_query1 = f"""
+                MATCH (a)-[r:`{relation_type}`]->(b)
+                WHERE a.ntpsId = $prop_id AND b.ntpsId = $val
+                RETURN r
+                """
+                check_query2 = f"""
+                MATCH (a)-[r:`{relation_type}`]->(b)
+                WHERE a.ntpsId = $val AND b.ntpsId = $prop_id
+                RETURN r
+                """
+                exists1 = list(session.run(check_query1, prop_id=prop_id, val=val))
+                exists2 = list(session.run(check_query2, prop_id=prop_id, val=val))
+                
+                if not exists1:
+                    #文章->关联文章的关系
+                    query1 = f"""
+                    MATCH (a), (b)
+                    WHERE a.ntpsId = $prop_id AND b.ntpsId = $val
+                    CREATE (a)-[r:`{relation_type}`]->(b)
+                    RETURN a, b
+                    """
+                    result1 = list(session.run(query1, prop_id=prop_id, val=val))
+                    if result1:
+                        created_count += 1
+                
+                if not exists2:
+                    #关联文章->文章的关系
+                    query2 = f"""
+                    MATCH (a), (b)
+                    WHERE a.ntpsId = $val AND b.ntpsId = $prop_id
+                    CREATE (a)-[r:`{relation_type}`]->(b)
+                    RETURN a, b
+                    """
+                    result2 = list(session.run(query2, prop_id=prop_id, val=val))
+                    if result2:
+                        created_count += 1
+            
+            logger.info(f"属性 {prop_id} 创建了 {created_count} 条关系")
+            total_created += created_count
+    
+    driver.close()
+    return total_created
 
 if __name__ == "__main__":
     #从data.json中读取10个问题的文章ntpsid
@@ -204,10 +434,12 @@ if __name__ == "__main__":
     docs = read_all_from_es(article_type="regulatoin", ntps_id=all_related_ids)
     logger.info("---------------------------------打印文章开始-------------------------")
     logger.info(f"Total documents: {len(docs)}")
+    
     #for doc in docs:
         #logger.info(doc)
     #logger.info("---------------------------------打印文章结束-------------------------")
-
+    
+    
     logger.info("---------------------------------打印关联文章开始-------------------------")
     logger.info("用'DispForm.aspx?ID='进行解析")
     extracted_ntpsIds = extract_dispform_ids(docs)
@@ -221,17 +453,20 @@ if __name__ == "__main__":
     extracted_quotes = extract_book_quotes(docs)
     logger.info(extracted_quotes)
     logger.info("---------------------------------打印关联文章结束-------------------------")
+    
+    logger.info("保存redirect link到docs/redirectLink.txt")
+    extract_redirect_links(docs)
+
     logger.info("通过year和doc_no获取ntpsId")
     all_parsed_docNumbers = parse_doc_num(extracted_numbers)
     all_docNo_ntpsIds = get_ntpsid_by_docNum(all_parsed_docNumbers)
-    ss = append_ntpsIds(extracted_ntpsIds,all_docNo_ntpsIds)
-    aa = "ss"
+    #合并key相同的数据
+    #1.把通过文号搜出的结果合并到extracted_ntpsIds中
+    merged_ids = append_ntpsIds(extracted_ntpsIds,all_docNo_ntpsIds)
+    #get_graph_node = query_from_graphdb()
 
-    '''
-    all_results = {}
-    for ntps_id, year, doc_no in parse_doc_numbers(extracted_numbers):
-        result = query_by_year_and_docno(year, doc_no)
-        key = f"[{year}] {doc_no}号"
-        all_results[key] = result
-        logger.info(f"{key}: {result}")
-    '''
+    #merged_ids["9764"]有值的，这里被filter掉了
+    existedIds_in_graph = filter_existing_in_graphdb(merged_ids)
+    create_property_relations(existedIds_in_graph, ["48844","37001"])
+    a = ''
+
