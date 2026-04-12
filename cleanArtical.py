@@ -423,17 +423,21 @@ def create_property_relations(existedIds_in_graph, property_ids=None):
     return total_created
 
 if __name__ == "__main__":
-    #从data.json中读取10个问题的文章ntpsid
-    with open("data.json", "r", encoding="utf-8") as f:
-        data = json.load(f)
+    #本地调试时在DockerFile中修改配置没用，需要执行命令：$env:LOAD_FROM_DATA_JSON="true 、 false"才可以
+    load_from_data_json = os.getenv("LOAD_FROM_DATA_JSON", "false").lower()
     
     all_related_ids = []
-    for item in data.get("ntpsId", []):
-        all_related_ids.extend(item.get("relatedArticleId", []))
-    
-    all_related_ids = [str(id) for id in all_related_ids]
+    if load_from_data_json == 'true':
+        #从data.json中读取10个问题的文章ntpsid
+        with open("data.json", "r", encoding="utf-8") as f:
+            data = json.load(f)
+        
+        for item in data.get("ntpsId", []):
+            all_related_ids.extend(item.get("relatedArticleId", []))
+        
+        all_related_ids = [str(id) for id in all_related_ids]
     #1.从ES中读取文章
-    docs = read_all_from_es(article_type="regulatoin", ntps_id=all_related_ids)
+    docs = read_all_from_es(article_type="regulatoin", ntps_id=all_related_ids if all_related_ids else None)
     logger.info("---------------------------------打印文章开始-------------------------")
     logger.info(f"Total documents: {len(docs)}")
     #for doc in docs:

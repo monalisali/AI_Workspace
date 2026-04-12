@@ -9,3 +9,5 @@ ENV ES_USE_SSL=false
 ENV MG_HOST=10.158.35.50
 ENV MG_PORT=7687
 ENV BATCH_SIZE=1000
+# 是否从data.json读取数据（true/false）
+ENV LOAD_FROM_DATA_JSON=false
