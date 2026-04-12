@@ -363,14 +363,14 @@ def create_property_relations(existedIds_in_graph, property_ids=None):
     with driver.session() as session:
         for prop_id in properties:
             if prop_id not in existedIds_in_graph:
-                logger.info(f"属性 {prop_id} 不存在, existedIds_in_graph keys: {list(existedIds_in_graph.keys())}")
+                logger.info(f"当前文章 {prop_id} 不存在, existedIds_in_graph keys: {list(existedIds_in_graph.keys())}")
                 continue
             
             values = existedIds_in_graph[prop_id]
-            logger.info(f"属性 {prop_id} 的值: {values}, 数量: {len(values)}")
+            logger.info(f"当前文章 {prop_id} 有关联文章: {values}, 数量: {len(values)}")
             
             if not values:
-                logger.info(f"属性 {prop_id} 没有值，无需创建关系")
+                logger.info(f"当前文章 {prop_id} 没有值，无需创建关系")
                 continue
             
             relation_type = "RELATED_TO"
@@ -401,6 +401,7 @@ def create_property_relations(existedIds_in_graph, property_ids=None):
                     result1 = list(session.run(query1, prop_id=prop_id, val=val))
                     if result1:
                         created_count += 1
+                        logger.info(f"当前文章 {prop_id} 创建[文章->关联文章]关系：文章 {{{prop_id}}} -> 关联文章 {{{val}}}")
                 
                 if not exists2:
                     #关联文章->文章的关系
@@ -413,8 +414,9 @@ def create_property_relations(existedIds_in_graph, property_ids=None):
                     result2 = list(session.run(query2, prop_id=prop_id, val=val))
                     if result2:
                         created_count += 1
+                        logger.info(f"当前文章 {prop_id} 创建[关联文章->文章]关系：关联文章 {{{val}}} -> 文章 {{{prop_id}}}")
             
-            logger.info(f"属性 {prop_id} 创建了 {created_count} 条关系")
+            logger.info(f"当前文章 {prop_id} 创建了 {created_count} 条关系")
             total_created += created_count
     
     driver.close()
@@ -469,8 +471,8 @@ if __name__ == "__main__":
     #把通过文号搜出的结果合并到extracted_ntpsIds中
     merged_ids = append_ntpsIds(extracted_ntpsIds,all_docNo_ntpsIds)
     #3.3 确保ntpsId都存在与图数据库
-    #merged_ids["9764"]有值的，这里被filter掉了
     existedIds_in_graph = filter_existing_in_graphdb(merged_ids)
-    create_property_relations(existedIds_in_graph, ["48844","37001"])
+    #create_property_relations(existedIds_in_graph, ["48844","37001"])
+    create_property_relations(existedIds_in_graph)
     a = ''
 
