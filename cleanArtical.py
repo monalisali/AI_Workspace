@@ -182,6 +182,7 @@ def append_ntpsIds(source, target):
                 source[id].append(i)
     return source
 
+
 #获取fullText中<a href="/_layouts/Redirect.aspx 开头的href
 def extract_redirect_links(documents):
     results = {}
@@ -233,7 +234,6 @@ def _read_dockerfile_env():
 
 
 #如果文章ntpsid和关联文章的ntpsid都存在于图数据库，则返回
-
 def filter_existing_in_graphdb(data):
     env = _read_dockerfile_env()
     mg_host = env.get("MG_HOST", os.getenv("MG_HOST"))
@@ -430,38 +430,47 @@ if __name__ == "__main__":
         all_related_ids.extend(item.get("relatedArticleId", []))
     
     all_related_ids = [str(id) for id in all_related_ids]
+    #1.从ES中读取文章
     docs = read_all_from_es(article_type="regulatoin", ntps_id=all_related_ids)
     logger.info("---------------------------------打印文章开始-------------------------")
     logger.info(f"Total documents: {len(docs)}")
-    '''
-    for doc in docs:
-        logger.info(doc)
+    #for doc in docs:
+        #logger.info(doc)
+    
     logger.info("---------------------------------打印文章结束-------------------------")
-    '''
+    
     
     logger.info("---------------------------------打印关联文章开始-------------------------")
-    logger.info("用'DispForm.aspx?ID='进行解析")
+    logger.info("查找fullText中'DispForm.aspx?ID='后的ntpsId")
+    #2 查找关联文章
+    #2.1 通过'DispForm.aspx?ID='进行解析
     extracted_ntpsIds = extract_dispform_ids(docs)
     logger.info(extracted_ntpsIds)
-
-    logger.info("用'[YYYY]X号'进行解析")
+    #2.2 通过'文号'进行解析
+    logger.info("查找fullTex中所有'[YYYY]X号'")
     extracted_numbers = extract_doc_numbers(docs)
     logger.info(extracted_numbers)
-
-    logger.info("《》'进行解析")
+    #2.3 通过'《》'进行解析
+    logger.info("查找fullText中所有'《》'")
     extracted_quotes = extract_book_quotes(docs)
     logger.info(extracted_quotes)
-    logger.info("---------------------------------打印关联文章结束-------------------------")
-    
     logger.info("保存redirect link到docs/redirectLink.txt")
+    #2.4 统一保存redirectLink
+    #redirectLink在fullTex中是加密的，只有点击后才能从跳转后的url找看到ntpsId
     extract_redirect_links(docs)
+    logger.info("---------------------------------打印关联文章结束-------------------------")
 
-    logger.info("通过year和doc_no获取ntpsId")
+    #3. 建立文章关系
+    #3.1 获取'文号'对应的ntpsId
+    logger.info("获取'文号'对应的ntpsId")
     all_parsed_docNumbers = parse_doc_num(extracted_numbers)
     all_docNo_ntpsIds = get_ntpsid_by_docNum(all_parsed_docNumbers)
-    #合并key相同的数据
-    append_ntpsIds(extracted_ntpsIds,all_docNo_ntpsIds)
-    ss = extract_redirect_links(docs)
-    aa = 'a'
-
+    #3.2 合并key相同的数据
+    #把通过文号搜出的结果合并到extracted_ntpsIds中
+    merged_ids = append_ntpsIds(extracted_ntpsIds,all_docNo_ntpsIds)
+    #3.3 确保ntpsId都存在与图数据库
+    #merged_ids["9764"]有值的，这里被filter掉了
+    existedIds_in_graph = filter_existing_in_graphdb(merged_ids)
+    create_property_relations(existedIds_in_graph, ["48844","37001"])
+    a = ''
 
