@@ -182,7 +182,6 @@ def append_ntpsIds(source, target):
                 source[id].append(i)
     return source
 
-
 #获取fullText中<a href="/_layouts/Redirect.aspx 开头的href
 def extract_redirect_links(documents):
     results = {}
@@ -434,11 +433,11 @@ if __name__ == "__main__":
     docs = read_all_from_es(article_type="regulatoin", ntps_id=all_related_ids)
     logger.info("---------------------------------打印文章开始-------------------------")
     logger.info(f"Total documents: {len(docs)}")
-    
-    #for doc in docs:
-        #logger.info(doc)
-    #logger.info("---------------------------------打印文章结束-------------------------")
-    
+    '''
+    for doc in docs:
+        logger.info(doc)
+    logger.info("---------------------------------打印文章结束-------------------------")
+    '''
     
     logger.info("---------------------------------打印关联文章开始-------------------------")
     logger.info("用'DispForm.aspx?ID='进行解析")
@@ -461,12 +460,8 @@ if __name__ == "__main__":
     all_parsed_docNumbers = parse_doc_num(extracted_numbers)
     all_docNo_ntpsIds = get_ntpsid_by_docNum(all_parsed_docNumbers)
     #合并key相同的数据
-    #1.把通过文号搜出的结果合并到extracted_ntpsIds中
-    merged_ids = append_ntpsIds(extracted_ntpsIds,all_docNo_ntpsIds)
-    #get_graph_node = query_from_graphdb()
+    append_ntpsIds(extracted_ntpsIds,all_docNo_ntpsIds)
+    ss = extract_redirect_links(docs)
+    aa = 'a'
 
-    #merged_ids["9764"]有值的，这里被filter掉了
-    existedIds_in_graph = filter_existing_in_graphdb(merged_ids)
-    create_property_relations(existedIds_in_graph, ["48844","37001"])
-    a = ''
 
