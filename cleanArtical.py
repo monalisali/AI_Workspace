@@ -66,6 +66,13 @@ def read_all_from_es(index=None, article_type=None, ntps_id=None, size=10000):
     return documents
 
 
+def get_title_from_es(ntps_id):
+    docs = read_all_from_es(ntps_id=str(ntps_id), size=1)
+    if docs:
+        return docs[0].get("title", "")
+    return ""
+
+
 def extract_dispform_ids(documents):
     results = {}
     for doc in documents:
@@ -373,9 +380,15 @@ def create_property_relations(existedIds_in_graph, property_ids=None):
                 logger.info(f"当前文章 {prop_id} 没有值，无需创建关系")
                 continue
             
-            relation_type = "RELATED_TO"
             created_count = 0
             for val in values:
+                relation_type = "RELATED_TO"
+                title_prop = get_title_from_es(prop_id)
+                title_val = get_title_from_es(val)
+                cancel_keywords = ["废止", "废除", "失效"]
+                if any(kw in title_prop or kw in title_val for kw in cancel_keywords):
+                    relation_type = "TOTAL_CANCEL"
+                
                 #先检查关系是否已经存在
                 check_query1 = f"""
                 MATCH (a)-[r:`{relation_type}`]->(b)
@@ -401,7 +414,7 @@ def create_property_relations(existedIds_in_graph, property_ids=None):
                     result1 = list(session.run(query1, prop_id=prop_id, val=val))
                     if result1:
                         created_count += 1
-                        logger.info(f"当前文章 {prop_id} 创建[文章->关联文章]关系：文章 {{{prop_id}}} -> 关联文章 {{{val}}}")
+                        logger.info(f"当前文章 {prop_id} 创建[文章->关联文章][{{{relation_type}}}]关系：文章 {{{prop_id}}} -> 关联文章 {{{val}}}")
                 
                 if not exists2:
                     #关联文章->文章的关系
@@ -414,7 +427,7 @@ def create_property_relations(existedIds_in_graph, property_ids=None):
                     result2 = list(session.run(query2, prop_id=prop_id, val=val))
                     if result2:
                         created_count += 1
-                        logger.info(f"当前文章 {prop_id} 创建[关联文章->文章]关系：关联文章 {{{val}}} -> 文章 {{{prop_id}}}")
+                        logger.info(f"当前文章 {prop_id} 创建[关联文章->文章][{{{relation_type}}}]关系：关联文章 {{{val}}} -> 文章 {{{prop_id}}}")
             
             logger.info(f"当前文章 {prop_id} 创建了 {created_count} 条关系")
             total_created += created_count
@@ -440,6 +453,7 @@ if __name__ == "__main__":
     docs = read_all_from_es(article_type="regulatoin", ntps_id=all_related_ids if all_related_ids else None)
     logger.info("---------------------------------打印文章开始-------------------------")
     logger.info(f"Total documents: {len(docs)}")
+    #在log中打印文章
     #for doc in docs:
         #logger.info(doc)
     
